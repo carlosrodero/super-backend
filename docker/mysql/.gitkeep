@@ -1,0 +1,3 @@
+# Este diretório armazena os dados do MySQL localmente
+# O diretório data/ será criado automaticamente quando o MySQL iniciar
+

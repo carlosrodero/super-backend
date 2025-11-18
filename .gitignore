@@ -1,0 +1,22 @@
+# Laravel (pasta web)
+/web/vendor/
+/web/node_modules/
+/web/public/hot
+/web/public/storage
+/web/storage/*.key
+/web/.env
+/web/.env.backup
+/web/.phpunit.result.cache
+/web/Homestead.json
+/web/Homestead.yaml
+/web/npm-debug.log
+/web/yarn-error.log
+/.idea
+/.vscode
+
+# Docker - Dados do MySQL (armazenados localmente)
+/docker/mysql/data/
+
+# Logs
+*.log
+
