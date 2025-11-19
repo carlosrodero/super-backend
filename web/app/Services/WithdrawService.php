@@ -2,6 +2,9 @@
 
 namespace App\Services;
 
+use App\Exceptions\SubadquirenteNotFoundException;
+use App\Exceptions\WebhookProcessingException;
+use App\Exceptions\WithdrawCreationException;
 use App\Models\User;
 use App\Models\Withdraw;
 use App\Repositories\WithdrawRepository;
@@ -35,27 +38,56 @@ class WithdrawService
             $this->validateWithdrawData($data);
 
             // Chama a API da subadquirente para criar o saque
-            $response = $subadquirente->createWithdraw($data);
+            try {
+                $response = $subadquirente->createWithdraw($data);
+            } catch (\Exception $e) {
+                Log::error('Erro na API da subadquirente ao criar saque', [
+                    'user_id' => $user->id,
+                    'subadquirente' => $user->subadquirente->name ?? 'N/A',
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                ]);
+                throw new WithdrawCreationException(
+                    'Erro ao comunicar com a subadquirente: ' . $e->getMessage(),
+                    502,
+                    $e,
+                    ['subadquirente' => $user->subadquirente->name ?? 'N/A']
+                );
+            }
 
             // Extrai o external_id da resposta
             $externalId = $this->extractExternalId($response);
 
             // Salva no banco de dados
-            $withdrawData = [
-                'user_id' => $user->id,
-                'subadquirente_id' => $user->subadquirente_id,
-                'external_id' => $externalId,
-                'amount' => $data['amount'],
-                'status' => Withdraw::STATUS_PENDING,
-                'bank_account' => $data['bank_account'] ?? null,
-                'requested_at' => now(),
-                'metadata' => [
-                    'api_response' => $response,
-                    'created_at' => now()->toDateTimeString(),
-                ],
-            ];
+            try {
+                $withdrawData = [
+                    'user_id' => $user->id,
+                    'subadquirente_id' => $user->subadquirente_id,
+                    'external_id' => $externalId,
+                    'amount' => $data['amount'],
+                    'status' => Withdraw::STATUS_PENDING,
+                    'bank_account' => $data['bank_account'] ?? null,
+                    'requested_at' => now(),
+                    'metadata' => [
+                        'api_response' => $response,
+                        'created_at' => now()->toDateTimeString(),
+                    ],
+                ];
 
-            $withdraw = $this->repository->create($withdrawData);
+                $withdraw = $this->repository->create($withdrawData);
+            } catch (\Exception $e) {
+                Log::error('Erro ao salvar saque no banco de dados', [
+                    'user_id' => $user->id,
+                    'external_id' => $externalId,
+                    'error' => $e->getMessage(),
+                ]);
+                throw new WithdrawCreationException(
+                    'Erro ao salvar saque no banco de dados: ' . $e->getMessage(),
+                    500,
+                    $e,
+                    ['external_id' => $externalId]
+                );
+            }
 
             Log::info('Saque criado com sucesso', [
                 'withdraw_id' => $withdraw->id,
@@ -65,21 +97,37 @@ class WithdrawService
             ]);
 
             // Despacha job para simular webhook após delay aleatório
-            // O delay é definido dentro do próprio Job (2-10 segundos aleatórios)
-            \App\Jobs\SimulateWithdrawWebhook::dispatch($withdraw);
-
-            Log::info('Simulação de webhook de saque agendada', [
-                'withdraw_id' => $withdraw->id,
-            ]);
+            try {
+                \App\Jobs\SimulateWithdrawWebhook::dispatch($withdraw);
+                Log::info('Simulação de webhook de saque agendada', [
+                    'withdraw_id' => $withdraw->id,
+                ]);
+            } catch (\Exception $e) {
+                // Não falha a criação do saque se o job falhar
+                Log::warning('Erro ao agendar simulação de webhook de saque', [
+                    'withdraw_id' => $withdraw->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
 
             return $withdraw;
+        } catch (SubadquirenteNotFoundException $e) {
+            throw $e;
+        } catch (WithdrawCreationException $e) {
+            throw $e;
         } catch (\Exception $e) {
-            Log::error('Erro ao criar saque', [
+            Log::error('Erro inesperado ao criar saque', [
                 'user_id' => $user->id,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
                 'data' => $data,
             ]);
-            throw $e;
+            throw new WithdrawCreationException(
+                'Erro inesperado ao criar saque: ' . $e->getMessage(),
+                500,
+                $e,
+                ['user_id' => $user->id]
+            );
         }
     }
 
@@ -144,7 +192,21 @@ class WithdrawService
             $metadata['webhook_data'] = $normalized;
             $updateData['metadata'] = $metadata;
 
-            $this->repository->update($withdraw, $updateData);
+            try {
+                $this->repository->update($withdraw, $updateData);
+            } catch (\Exception $e) {
+                Log::error('Erro ao atualizar saque no banco de dados', [
+                    'withdraw_id' => $withdraw->id,
+                    'identifier' => $identifier,
+                    'error' => $e->getMessage(),
+                ]);
+                throw new WebhookProcessingException(
+                    'Erro ao atualizar saque no banco de dados: ' . $e->getMessage(),
+                    500,
+                    $e,
+                    ['withdraw_id' => $withdraw->id, 'identifier' => $identifier]
+                );
+            }
 
             Log::info('Saque atualizado via webhook', [
                 'withdraw_id' => $withdraw->id,
@@ -154,12 +216,20 @@ class WithdrawService
             ]);
 
             return $withdraw->fresh();
+        } catch (WebhookProcessingException $e) {
+            throw $e;
         } catch (\Exception $e) {
-            Log::error('Erro ao processar webhook de saque', [
+            Log::error('Erro inesperado ao processar webhook de saque', [
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
                 'normalized' => $normalized,
             ]);
-            throw $e;
+            throw new WebhookProcessingException(
+                'Erro inesperado ao processar webhook de saque: ' . $e->getMessage(),
+                500,
+                $e,
+                ['normalized' => $normalized]
+            );
         }
     }
 
@@ -173,18 +243,33 @@ class WithdrawService
     protected function validateWithdrawData(array $data): void
     {
         if (!isset($data['amount']) || $data['amount'] <= 0) {
-            throw new \Exception('Valor do saque é obrigatório e deve ser maior que zero');
+            throw new WithdrawCreationException(
+                'Valor do saque é obrigatório e deve ser maior que zero',
+                422,
+                null,
+                ['field' => 'amount', 'value' => $data['amount'] ?? null]
+            );
         }
 
         if (!isset($data['bank_account']) || !is_array($data['bank_account'])) {
-            throw new \Exception('Dados bancários são obrigatórios para realizar saque');
+            throw new WithdrawCreationException(
+                'Dados bancários são obrigatórios para realizar saque',
+                422,
+                null,
+                ['field' => 'bank_account']
+            );
         }
 
         // Valida campos obrigatórios da conta bancária
         $requiredBankFields = ['bank_code', 'agency', 'account', 'account_type'];
         foreach ($requiredBankFields as $field) {
             if (!isset($data['bank_account'][$field]) || empty($data['bank_account'][$field])) {
-                throw new \Exception("Campo '{$field}' é obrigatório nos dados bancários");
+                throw new WithdrawCreationException(
+                    "Campo '{$field}' é obrigatório nos dados bancários",
+                    422,
+                    null,
+                    ['field' => "bank_account.{$field}", 'bank_account' => $data['bank_account']]
+                );
             }
         }
     }

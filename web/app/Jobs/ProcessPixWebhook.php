@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Exceptions\WebhookProcessingException;
 use App\Services\PixService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -71,15 +72,25 @@ class ProcessPixWebhook implements ShouldQueue
                     'normalized_data' => $this->normalizedData,
                 ]);
             }
-        } catch (\Exception $e) {
+        } catch (WebhookProcessingException $e) {
             Log::error('ProcessPixWebhook: Erro ao processar webhook', [
+                'error' => $e->getMessage(),
+                'context' => $e->getContext(),
+                'normalized_data' => $this->normalizedData,
+            ]);
+            throw $e;
+        } catch (\Exception $e) {
+            Log::error('ProcessPixWebhook: Erro inesperado ao processar webhook', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
                 'normalized_data' => $this->normalizedData,
             ]);
-
-            // Re-lança a exceção para que o Laravel possa registrar como falha
-            throw $e;
+            throw new WebhookProcessingException(
+                'Erro inesperado ao processar webhook de PIX: ' . $e->getMessage(),
+                500,
+                $e,
+                ['normalized_data' => $this->normalizedData]
+            );
         }
     }
 

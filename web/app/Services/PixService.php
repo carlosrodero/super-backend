@@ -2,6 +2,9 @@
 
 namespace App\Services;
 
+use App\Exceptions\PixCreationException;
+use App\Exceptions\SubadquirenteNotFoundException;
+use App\Exceptions\WebhookProcessingException;
 use App\Models\Pix;
 use App\Models\User;
 use App\Repositories\PixRepository;
@@ -35,27 +38,56 @@ class PixService
             $this->validatePixData($data);
 
             // Chama a API da subadquirente para criar o PIX
-            $response = $subadquirente->createPix($data);
+            try {
+                $response = $subadquirente->createPix($data);
+            } catch (\Exception $e) {
+                Log::error('Erro na API da subadquirente ao criar PIX', [
+                    'user_id' => $user->id,
+                    'subadquirente' => $user->subadquirente->name ?? 'N/A',
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                ]);
+                throw new PixCreationException(
+                    'Erro ao comunicar com a subadquirente: ' . $e->getMessage(),
+                    502,
+                    $e,
+                    ['subadquirente' => $user->subadquirente->name ?? 'N/A']
+                );
+            }
 
             // Extrai o external_id da resposta
             $externalId = $this->extractExternalId($response);
 
             // Salva no banco de dados
-            $pixData = [
-                'user_id' => $user->id,
-                'subadquirente_id' => $user->subadquirente_id,
-                'external_id' => $externalId,
-                'amount' => $data['amount'],
-                'status' => Pix::STATUS_PENDING,
-                'payer_name' => $data['payer_name'] ?? null,
-                'payer_cpf' => $data['payer_cpf'] ?? null,
-                'metadata' => [
-                    'api_response' => $response,
-                    'created_at' => now()->toDateTimeString(),
-                ],
-            ];
+            try {
+                $pixData = [
+                    'user_id' => $user->id,
+                    'subadquirente_id' => $user->subadquirente_id,
+                    'external_id' => $externalId,
+                    'amount' => $data['amount'],
+                    'status' => Pix::STATUS_PENDING,
+                    'payer_name' => $data['payer_name'] ?? null,
+                    'payer_cpf' => $data['payer_cpf'] ?? null,
+                    'metadata' => [
+                        'api_response' => $response,
+                        'created_at' => now()->toDateTimeString(),
+                    ],
+                ];
 
-            $pix = $this->repository->create($pixData);
+                $pix = $this->repository->create($pixData);
+            } catch (\Exception $e) {
+                Log::error('Erro ao salvar PIX no banco de dados', [
+                    'user_id' => $user->id,
+                    'external_id' => $externalId,
+                    'error' => $e->getMessage(),
+                ]);
+                throw new PixCreationException(
+                    'Erro ao salvar PIX no banco de dados: ' . $e->getMessage(),
+                    500,
+                    $e,
+                    ['external_id' => $externalId]
+                );
+            }
 
             Log::info('PIX criado com sucesso', [
                 'pix_id' => $pix->id,
@@ -65,21 +97,37 @@ class PixService
             ]);
 
             // Despacha job para simular webhook após delay aleatório
-            // O delay é definido dentro do próprio Job (2-10 segundos aleatórios)
-            \App\Jobs\SimulatePixWebhook::dispatch($pix);
-
-            Log::info('Simulação de webhook PIX agendada', [
-                'pix_id' => $pix->id,
-            ]);
+            try {
+                \App\Jobs\SimulatePixWebhook::dispatch($pix);
+                Log::info('Simulação de webhook PIX agendada', [
+                    'pix_id' => $pix->id,
+                ]);
+            } catch (\Exception $e) {
+                // Não falha a criação do PIX se o job falhar
+                Log::warning('Erro ao agendar simulação de webhook PIX', [
+                    'pix_id' => $pix->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
 
             return $pix;
+        } catch (SubadquirenteNotFoundException $e) {
+            throw $e;
+        } catch (PixCreationException $e) {
+            throw $e;
         } catch (\Exception $e) {
-            Log::error('Erro ao criar PIX', [
+            Log::error('Erro inesperado ao criar PIX', [
                 'user_id' => $user->id,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
                 'data' => $data,
             ]);
-            throw $e;
+            throw new PixCreationException(
+                'Erro inesperado ao criar PIX: ' . $e->getMessage(),
+                500,
+                $e,
+                ['user_id' => $user->id]
+            );
         }
     }
 
@@ -144,7 +192,21 @@ class PixService
             $metadata['webhook_data'] = $normalized;
             $updateData['metadata'] = $metadata;
 
-            $this->repository->update($pix, $updateData);
+            try {
+                $this->repository->update($pix, $updateData);
+            } catch (\Exception $e) {
+                Log::error('Erro ao atualizar PIX no banco de dados', [
+                    'pix_id' => $pix->id,
+                    'identifier' => $identifier,
+                    'error' => $e->getMessage(),
+                ]);
+                throw new WebhookProcessingException(
+                    'Erro ao atualizar PIX no banco de dados: ' . $e->getMessage(),
+                    500,
+                    $e,
+                    ['pix_id' => $pix->id, 'identifier' => $identifier]
+                );
+            }
 
             Log::info('PIX atualizado via webhook', [
                 'pix_id' => $pix->id,
@@ -154,12 +216,20 @@ class PixService
             ]);
 
             return $pix->fresh();
+        } catch (WebhookProcessingException $e) {
+            throw $e;
         } catch (\Exception $e) {
-            Log::error('Erro ao processar webhook de PIX', [
+            Log::error('Erro inesperado ao processar webhook de PIX', [
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
                 'normalized' => $normalized,
             ]);
-            throw $e;
+            throw new WebhookProcessingException(
+                'Erro inesperado ao processar webhook de PIX: ' . $e->getMessage(),
+                500,
+                $e,
+                ['normalized' => $normalized]
+            );
         }
     }
 
@@ -173,7 +243,12 @@ class PixService
     protected function validatePixData(array $data): void
     {
         if (!isset($data['amount']) || $data['amount'] <= 0) {
-            throw new \Exception('Valor do PIX é obrigatório e deve ser maior que zero');
+            throw new PixCreationException(
+                'Valor do PIX é obrigatório e deve ser maior que zero',
+                422,
+                null,
+                ['field' => 'amount', 'value' => $data['amount'] ?? null]
+            );
         }
     }
 

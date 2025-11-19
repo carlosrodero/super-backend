@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Exceptions\SubadquirenteNotFoundException;
 use App\Models\Subadquirente as SubadquirenteModel;
 use App\Models\User;
 use App\Subadquirentes\Interfaces\SubadquirenteInterface;
@@ -23,13 +24,26 @@ class SubadquirenteServiceFactory
         $namespace = self::getNamespace($model->name);
         
         if (!class_exists($namespace)) {
-            throw new \Exception("Subadquirente '{$model->name}' não encontrada ou não implementada. Classe esperada: {$namespace}");
+            Log::error('Subadquirente não encontrada', [
+                'subadquirente_name' => $model->name,
+                'expected_class' => $namespace,
+            ]);
+            throw new SubadquirenteNotFoundException(
+                "Subadquirente '{$model->name}' não encontrada ou não implementada. Classe esperada: {$namespace}",
+                404
+            );
         }
 
         $instance = new $namespace($model);
 
         if (!$instance instanceof SubadquirenteInterface) {
-            throw new \Exception("A classe '{$namespace}' não implementa SubadquirenteInterface");
+            Log::error('Subadquirente não implementa interface', [
+                'class' => $namespace,
+            ]);
+            throw new SubadquirenteNotFoundException(
+                "A classe '{$namespace}' não implementa SubadquirenteInterface",
+                500
+            );
         }
 
         return $instance;
@@ -49,7 +63,13 @@ class SubadquirenteServiceFactory
             ->first();
 
         if (!$subadquirente) {
-            throw new \Exception("Subadquirente '{$name}' não encontrada ou inativa");
+            Log::warning('Subadquirente não encontrada ou inativa', [
+                'name' => $name,
+            ]);
+            throw new SubadquirenteNotFoundException(
+                "Subadquirente '{$name}' não encontrada ou inativa",
+                404
+            );
         }
 
         return self::make($subadquirente);
@@ -67,15 +87,30 @@ class SubadquirenteServiceFactory
         $user = $user ?? Auth::user();
 
         if (!$user) {
-            throw new \Exception('Usuário não autenticado');
+            Log::warning('Tentativa de acessar subadquirente sem autenticação');
+            throw new SubadquirenteNotFoundException('Usuário não autenticado', 401);
         }
 
         if (!$user->subadquirente) {
-            throw new \Exception("Usuário '{$user->name}' não possui subadquirente configurada");
+            Log::warning('Usuário sem subadquirente configurada', [
+                'user_id' => $user->id,
+                'user_name' => $user->name,
+            ]);
+            throw new SubadquirenteNotFoundException(
+                "Usuário '{$user->name}' não possui subadquirente configurada",
+                404
+            );
         }
 
         if (!$user->subadquirente->active) {
-            throw new \Exception("Subadquirente '{$user->subadquirente->name}' está inativa");
+            Log::warning('Subadquirente do usuário está inativa', [
+                'user_id' => $user->id,
+                'subadquirente_name' => $user->subadquirente->name,
+            ]);
+            throw new SubadquirenteNotFoundException(
+                "Subadquirente '{$user->subadquirente->name}' está inativa",
+                403
+            );
         }
 
         Log::info('Subadquirente encontrada: ' . $user->subadquirente->name);
