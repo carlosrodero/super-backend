@@ -2,21 +2,13 @@
 
 namespace App\Subadquirentes\SubadqA\Webhook;
 
-use App\Services\PixService;
-use App\Services\WithdrawService;
+use App\Jobs\ProcessPixWebhook;
+use App\Jobs\ProcessWithdrawWebhook;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
 class SubadqAWebhookHandler
 {
-    protected PixService $pixService;
-    protected WithdrawService $withdrawService;
-
-    public function __construct()
-    {
-        $this->pixService = app(PixService::class);
-        $this->withdrawService = app(WithdrawService::class);
-    }
 
     /**
      * Processa o webhook recebido
@@ -52,8 +44,8 @@ class SubadqAWebhookHandler
         // Normaliza payload da SubadqA para formato padrão
         $normalized = $this->normalizePixPayload($payload);
         
-        // Processa o webhook através do service
-        $this->pixService->processWebhook($normalized);
+        // Despacha job para processar webhook de forma assíncrona
+        ProcessPixWebhook::dispatch($normalized);
     }
 
     /**
@@ -64,8 +56,8 @@ class SubadqAWebhookHandler
         // Normaliza payload da SubadqA para formato padrão
         $normalized = $this->normalizeWithdrawPayload($payload);
         
-        // Processa o webhook através do service
-        $this->withdrawService->processWebhook($normalized);
+        // Despacha job para processar webhook de forma assíncrona
+        ProcessWithdrawWebhook::dispatch($normalized);
     }
 
     /**
