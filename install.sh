@@ -23,6 +23,15 @@ if [ ! -f "web/.env" ]; then
     
     if [ -f "web/.env.example" ]; then
         cp web/.env.example web/.env
+        # Garantir que o banco de dados está correto usando perl (mais confiável)
+        perl -i -pe 's/^DB_DATABASE=.*/DB_DATABASE=super_backend/' web/.env 2>/dev/null || \
+        perl -i -pe 's/^DB_DATABASE=.*/DB_DATABASE=super_backend/' web/.env
+        perl -i -pe 's/^DB_HOST=.*/DB_HOST=db/' web/.env 2>/dev/null || \
+        perl -i -pe 's/^DB_HOST=.*/DB_HOST=db/' web/.env
+        perl -i -pe 's/^DB_USERNAME=.*/DB_USERNAME=super_backend/' web/.env 2>/dev/null || \
+        perl -i -pe 's/^DB_USERNAME=.*/DB_USERNAME=super_backend/' web/.env
+        perl -i -pe 's/^DB_PASSWORD=.*/DB_PASSWORD=root/' web/.env 2>/dev/null || \
+        perl -i -pe 's/^DB_PASSWORD=.*/DB_PASSWORD=root/' web/.env
     else
         echo "⚠️  Arquivo .env.example não encontrado. Criando .env básico..."
         cat > web/.env << EOF
@@ -39,7 +48,7 @@ DB_CONNECTION=mysql
 DB_HOST=db
 DB_PORT=3306
 DB_DATABASE=super_backend
-DB_USERNAME=super_backend
+DB_USERNAME= root
 DB_PASSWORD=root
 
 BROADCAST_DRIVER=log
@@ -67,6 +76,23 @@ EOF
     echo "✅ Arquivo .env criado!"
 else
     echo "✅ Arquivo .env já existe"
+    # Verificar e corrigir configurações do banco se necessário
+    if ! grep -q "DB_DATABASE=super_backend" web/.env 2>/dev/null; then
+        echo "🔧 Corrigindo configuração do banco de dados no .env..."
+        # Usar o container Docker para editar (evita problemas de permissão)
+        if docker compose ps app | grep -q "Up"; then
+            docker compose exec -T app sh -c "cd /var/www/html && perl -i -pe 's/^DB_DATABASE=.*/DB_DATABASE=super_backend/' .env && perl -i -pe 's/^DB_HOST=.*/DB_HOST=db/' .env && perl -i -pe 's/^DB_USERNAME=.*/DB_USERNAME=super_backend/' .env && perl -i -pe 's/^DB_PASSWORD=.*/DB_PASSWORD=root/' .env" 2>/dev/null
+        else
+            # Se o container não estiver rodando, tentar editar localmente
+            if command -v perl >/dev/null 2>&1; then
+                perl -i -pe 's/^DB_DATABASE=.*/DB_DATABASE=super_backend/' web/.env 2>/dev/null || true
+                perl -i -pe 's/^DB_HOST=.*/DB_HOST=db/' web/.env 2>/dev/null || true
+                perl -i -pe 's/^DB_USERNAME=.*/DB_USERNAME=super_backend/' web/.env 2>/dev/null || true
+                perl -i -pe 's/^DB_PASSWORD=.*/DB_PASSWORD=root/' web/.env 2>/dev/null || true
+            fi
+        fi
+        echo "✅ Configurações do banco corrigidas!"
+    fi
 fi
 
 # Gerar chave da aplicação se não existir
@@ -84,7 +110,40 @@ docker compose up -d
 
 # Aguardar MySQL estar pronto
 echo "⏳ Aguardando MySQL estar pronto..."
-sleep 10
+MAX_ATTEMPTS=30
+ATTEMPT=0
+
+while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+    # Verificar se o container está rodando
+    if ! docker compose ps db | grep -q "Up"; then
+        echo "   Container MySQL não está rodando. Aguardando..."
+        ATTEMPT=$((ATTEMPT + 1))
+        sleep 2
+        continue
+    fi
+    
+    # Tentar conectar ao MySQL
+    if docker compose exec -T db mysqladmin ping -h localhost --silent 2>/dev/null || \
+       docker compose exec -T db mysql -uroot -proot -e "SELECT 1" >/dev/null 2>&1; then
+        echo "✅ MySQL está pronto!"
+        break
+    fi
+    
+    ATTEMPT=$((ATTEMPT + 1))
+    if [ $((ATTEMPT % 5)) -eq 0 ]; then
+        echo "   Tentativa $ATTEMPT/$MAX_ATTEMPTS... (aguardando MySQL inicializar)"
+    fi
+    sleep 2
+done
+
+if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+    echo "⚠️  Aviso: MySQL pode não estar totalmente pronto após $MAX_ATTEMPTS tentativas"
+    echo "   Continuando mesmo assim..."
+fi
+
+# Aguardar mais um pouco para garantir que o MySQL está totalmente inicializado
+echo "   Aguardando mais 3 segundos para garantir inicialização completa..."
+sleep 3
 
 # Executar migrações e seeders
 echo "📊 Executando migrações e seeders..."
