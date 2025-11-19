@@ -7,6 +7,7 @@ use App\Subadquirentes\AbstractSubadquirente;
 use App\Subadquirentes\SubadqA\Requests\CreatePixRequest;
 use App\Subadquirentes\SubadqA\Requests\CreateWithdrawRequest;
 use App\Subadquirentes\SubadqA\Webhook\SubadqAWebhookHandler;
+use Illuminate\Support\Facades\Log;
 
 class SubadqA extends AbstractSubadquirente
 {
@@ -17,8 +18,14 @@ class SubadqA extends AbstractSubadquirente
     {
         $request = new CreatePixRequest($this->model);
         $payload = $request->build($data);
+        // getEndpoint() retorna apenas o path (ex: /pix/create)
         $endpoint = $request->getEndpoint();
         $headers = $request->getHeaders();
+
+        Log::info('SubadqA: Criando PIX', [
+            'endpoint' => $endpoint,
+            'payload' => $payload,
+        ]);
 
         return $this->post($endpoint, $payload, $headers);
     }
@@ -30,8 +37,14 @@ class SubadqA extends AbstractSubadquirente
     {
         $request = new CreateWithdrawRequest($this->model);
         $payload = $request->build($data);
+        // getEndpoint() retorna apenas o path (ex: /withdraw)
         $endpoint = $request->getEndpoint();
         $headers = $request->getHeaders();
+
+        Log::info('SubadqA: Criando saque', [
+            'endpoint' => $endpoint,
+            'payload' => $payload,
+        ]);
 
         return $this->post($endpoint, $payload, $headers);
     }

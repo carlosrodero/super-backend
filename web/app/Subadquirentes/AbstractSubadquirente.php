@@ -47,39 +47,58 @@ abstract class AbstractSubadquirente implements SubadquirenteInterface
      */
     protected function makeRequest(string $method, string $endpoint, array $data = [], array $headers = []): array
     {
-        $url = $this->getBaseUrl() . $endpoint;
+        // Se o endpoint já for uma URL completa, usa diretamente
+        // Caso contrário, concatena com a base_url
+        $url = filter_var($endpoint, FILTER_VALIDATE_URL) 
+            ? $endpoint 
+            : rtrim($this->getBaseUrl(), '/') . '/' . ltrim($endpoint, '/');
         
         $defaultHeaders = $this->getDefaultHeaders();
         $mergedHeaders = array_merge($defaultHeaders, $headers);
 
         try {
             Log::info("Subadquirente Request", [
-                'method' => $method,
+                'subadquirente' => $this->model->name,
+                'method' => strtoupper($method),
                 'url' => $url,
                 'headers' => $mergedHeaders,
                 'data' => $data,
             ]);
 
-            $response = Http::withHeaders($mergedHeaders)
+            $response = Http::timeout(30)
+                ->retry(2, 100)
+                ->withHeaders($mergedHeaders)
                 ->{strtolower($method)}($url, $data);
 
             $responseData = $response->json() ?? [];
             $statusCode = $response->status();
 
             Log::info("Subadquirente Response", [
+                'subadquirente' => $this->model->name,
                 'status' => $statusCode,
                 'response' => $responseData,
             ]);
 
             if (!$response->successful()) {
-                throw new \Exception("Erro na requisição: {$statusCode}", $statusCode);
+                $errorMessage = $responseData['message'] ?? $responseData['error'] ?? "Erro na requisição: {$statusCode}";
+                throw new \Exception($errorMessage, $statusCode);
             }
 
             return $responseData;
-        } catch (\Exception $e) {
-            Log::error("Erro na requisição para subadquirente", [
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            Log::error("Erro de conexão com subadquirente", [
+                'subadquirente' => $this->model->name,
                 'url' => $url,
                 'error' => $e->getMessage(),
+            ]);
+            throw new \Exception("Erro de conexão com a subadquirente: " . $e->getMessage(), 0, $e);
+        } catch (\Exception $e) {
+            Log::error("Erro na requisição para subadquirente", [
+                'subadquirente' => $this->model->name,
+                'url' => $url,
+                'method' => $method,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
             throw $e;
         }
