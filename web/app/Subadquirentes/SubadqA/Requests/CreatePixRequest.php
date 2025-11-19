@@ -3,6 +3,7 @@
 namespace App\Subadquirentes\SubadqA\Requests;
 
 use App\Subadquirentes\SubadqA\BaseRequest;
+use Illuminate\Support\Facades\Log;
 
 class CreatePixRequest extends BaseRequest
 {
@@ -19,7 +20,7 @@ class CreatePixRequest extends BaseRequest
      */
     protected function getMockResponseName(): ?string
     {
-        return '[SUCESSO_PIX] pix_create';
+        return 'SUCESSO_PIX';
     }
 
     /**

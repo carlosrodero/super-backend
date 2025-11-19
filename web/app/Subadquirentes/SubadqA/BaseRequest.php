@@ -33,7 +33,7 @@ abstract class BaseRequest extends AbstractBaseRequest
     /**
      * Retorna os headers da requisição
      */
-    protected function getHeaders(): array
+    public function getHeaders(): array
     {
         $headers = [
             'Content-Type' => 'application/json',
@@ -52,6 +52,9 @@ abstract class BaseRequest extends AbstractBaseRequest
     /**
      * Retorna o nome do mock response (deve ser implementado nas classes filhas)
      */
-    abstract protected function getMockResponseName(): ?string;
+    protected function getMockResponseName(): ?string
+    {
+        return null;
+    }
 }
 

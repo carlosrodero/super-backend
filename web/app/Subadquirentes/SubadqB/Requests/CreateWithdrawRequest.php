@@ -19,7 +19,7 @@ class CreateWithdrawRequest extends BaseRequest
      */
     protected function getMockResponseName(): ?string
     {
-        return '[SUCESSO_WD] withdraw';
+        return 'SUCESSO_WD';
     }
 
     /**

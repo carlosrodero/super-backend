@@ -33,7 +33,7 @@ abstract class BaseRequest extends AbstractBaseRequest
     /**
      * Retorna os headers da requisição
      */
-    protected function getHeaders(): array
+    public function getHeaders(): array
     {
         $headers = [
             'Content-Type' => 'application/json',

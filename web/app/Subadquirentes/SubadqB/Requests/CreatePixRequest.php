@@ -19,7 +19,7 @@ class CreatePixRequest extends BaseRequest
      */
     protected function getMockResponseName(): ?string
     {
-        return '[SUCESSO_PIX] pix_create';
+        return 'SUCESSO_PIX';
     }
 
     /**
@@ -29,12 +29,14 @@ class CreatePixRequest extends BaseRequest
     public function build(array $data): array
     {
         return [
-            'value' => $data['amount'],
+            'seller_id' => $data['seller_id'] ?? null,
+            'order_id' => $data['order_id'] ?? null,
+            'amount' => $data['amount'],
             'payer' => [
                 'name' => $data['payer_name'] ?? null,
-                'document' => $data['payer_cpf'] ?? null,
+                'cpf_cnpj' => $data['payer_cpf'] ?? null,
             ],
-            'description' => $data['description'] ?? 'Cobrança PIX',
+            'expires_in' => $data['expires_in'] ?? 3600
         ];
     }
 }

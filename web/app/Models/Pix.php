@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class Pix extends Model
 {
     use HasFactory;
+    protected $table = 'pix';
 
     /**
      * Status possíveis para PIX

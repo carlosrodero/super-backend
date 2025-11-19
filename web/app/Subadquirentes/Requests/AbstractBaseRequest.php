@@ -12,7 +12,7 @@ abstract class AbstractBaseRequest
     /**
      * Retorna os headers da requisição
      */
-    abstract protected function getHeaders(): array;
+    abstract public function getHeaders(): array;
 
     /**
      * Retorna o hash de autenticação (se necessário)

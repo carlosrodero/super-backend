@@ -103,7 +103,7 @@ class PixService
                 return null;
             }
 
-            $pix = $this->repository->findByExternalIdOrPixId($identifier);
+            $pix = $this->repository->findByExternalId($identifier);
 
             if (!$pix) {
                 Log::warning('PixService: PIX não encontrado para webhook', [
