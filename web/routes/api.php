@@ -24,18 +24,4 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/user', [AuthController::class, 'me']);
-
-    Route::get('/subadquirente', function () {
-        $subadquirente = SubadquirenteServiceFactory::makeFromAuthenticatedUser();
-        $user = auth()->user();
-        
-        return response()->json([
-            'subadquirente' => [
-                'name' => $user->subadquirente->name,
-                'base_url' => $user->subadquirente->base_url,
-                'active' => $user->subadquirente->active,
-            ],
-            'class' => get_class($subadquirente),
-        ]);
-    });
 });
