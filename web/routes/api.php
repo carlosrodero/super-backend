@@ -24,4 +24,18 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/user', [AuthController::class, 'me']);
+
+    // Rotas de PIX
+    Route::prefix('pix')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\PixController::class, 'index']);
+        Route::post('/', [\App\Http\Controllers\Api\PixController::class, 'store']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\PixController::class, 'show']);
+    });
+
+    // Rotas de Saque
+    Route::prefix('withdraw')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\WithdrawController::class, 'index']);
+        Route::post('/', [\App\Http\Controllers\Api\WithdrawController::class, 'store']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\WithdrawController::class, 'show']);
+    });
 });
