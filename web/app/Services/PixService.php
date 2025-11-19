@@ -64,6 +64,14 @@ class PixService
                 'subadquirente' => $user->subadquirente->name,
             ]);
 
+            // Despacha job para simular webhook após delay aleatório
+            // O delay é definido dentro do próprio Job (2-10 segundos aleatórios)
+            \App\Jobs\SimulatePixWebhook::dispatch($pix);
+
+            Log::info('Simulação de webhook PIX agendada', [
+                'pix_id' => $pix->id,
+            ]);
+
             return $pix;
         } catch (\Exception $e) {
             Log::error('Erro ao criar PIX', [

@@ -64,6 +64,14 @@ class WithdrawService
                 'subadquirente' => $user->subadquirente->name,
             ]);
 
+            // Despacha job para simular webhook após delay aleatório
+            // O delay é definido dentro do próprio Job (2-10 segundos aleatórios)
+            \App\Jobs\SimulateWithdrawWebhook::dispatch($withdraw);
+
+            Log::info('Simulação de webhook de saque agendada', [
+                'withdraw_id' => $withdraw->id,
+            ]);
+
             return $withdraw;
         } catch (\Exception $e) {
             Log::error('Erro ao criar saque', [
