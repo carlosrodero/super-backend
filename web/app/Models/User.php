@@ -4,6 +4,8 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -21,6 +23,7 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'subadquirente_id',
     ];
 
     /**
@@ -42,4 +45,28 @@ class User extends Authenticatable
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
     ];
+
+    /**
+     * Relacionamento: Um usuário pertence a uma subadquirente
+     */
+    public function subadquirente(): BelongsTo
+    {
+        return $this->belongsTo(Subadquirente::class);
+    }
+
+    /**
+     * Relacionamento: Um usuário tem muitos PIX
+     */
+    public function pix(): HasMany
+    {
+        return $this->hasMany(Pix::class);
+    }
+
+    /**
+     * Relacionamento: Um usuário tem muitos saques
+     */
+    public function withdraws(): HasMany
+    {
+        return $this->hasMany(Withdraw::class);
+    }
 }
